@@ -135,6 +135,118 @@ namespace ForestMSG.Core.Services.Network
             await StartAsync();
         }
 
+        public async Task AddBridgesAsync(List<string> bridges)
+        {
+            try
+            {
+                Logger.WriteLog($"[TorService] Добавление {bridges.Count} мостов...");
+
+                string torrcPath = GetTorrcPath();
+
+                var config = new List<string>();
+                if (File.Exists(torrcPath))
+                {
+                    config = File.ReadAllLines(torrcPath).ToList();
+                }
+
+                config = config.Where(line => !line.StartsWith("Bridge ")
+                                           && !line.StartsWith("UseBridges ")).ToList();
+
+                config.Add("UseBridges 1");
+                foreach (var bridge in bridges)
+                {
+                    config.Add($"Bridge {bridge}");
+                }
+
+                if (OperatingSystem.IsLinux())
+                {
+                    config.Add("ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy");
+                }
+                else if (OperatingSystem.IsWindows())
+                {
+                    config.Add("ClientTransportPlugin obfs4 exec C:\\Tor\\obfs4proxy.exe");
+                }
+                else if (OperatingSystem.IsMacOS())
+                {
+                    config.Add("ClientTransportPlugin obfs4 exec /usr/local/bin/obfs4proxy");
+                }
+
+                // 6. Записываем
+                await File.WriteAllLinesAsync(torrcPath, config);
+
+                Logger.WriteLog($"[TorService] Мосты добавлены в {torrcPath}");
+
+                await RestartSystemTorAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLog($"[TorService] Ошибка добавления мостов: {ex.Message}");
+                throw;
+            }
+        }
+
+        private string GetTorrcPath()
+        {
+            if (OperatingSystem.IsLinux())
+                return "/etc/tor/torrc";
+            if (OperatingSystem.IsWindows())
+                return @"C:\Users\Default\AppData\Roaming\tor\torrc";
+            if (OperatingSystem.IsMacOS())
+                return "/usr/local/etc/tor/torrc";
+            throw new PlatformNotSupportedException();
+        }
+
+        private async Task RestartSystemTorAsync()
+        {
+            try
+            {
+                if (OperatingSystem.IsLinux())
+                {
+                    await RunCommandAsync("sudo", "systemctl restart tor");
+                }
+                else if (OperatingSystem.IsMacOS())
+                {
+                    await RunCommandAsync("brew", "services restart tor");
+                }
+                else if (OperatingSystem.IsWindows())
+                {
+                    await RunCommandAsync("net", "stop tor");
+                    await RunCommandAsync("net", "start tor");
+                }
+
+                Logger.WriteLog("[TorService] Tor перезапущен");
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLog($"[TorService] Ошибка перезапуска Tor: {ex.Message}");
+                throw;
+            }
+        }
+
+        private async Task RunCommandAsync(string command, string args)
+        {
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = command,
+                    Arguments = args,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                }
+            };
+
+            process.Start();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0)
+            {
+                var error = await process.StandardError.ReadToEndAsync();
+                throw new Exception($"Команда '{command} {args}' завершилась с ошибкой: {error}");
+            }
+        }
+
         public void Dispose()
         {
             _isRunning = false;
