@@ -58,6 +58,20 @@ namespace Forest
             await I2PServiceTest.RunTest();
 
             await TorServiceTest.RunTest();
+
+            var i2pService = new I2PService();
+            var torService = new TorService();
+            var proxyService = new ProxyService(i2pService, torService);
+
+            await proxyService.InitializeAsync();
+
+            var i2p = proxyService.GetI2PService();
+
+            var rssContent = await proxyService.GetExternalAsync("https://example.com");
+
+            var status = proxyService.GetStatus();
+            Console.WriteLine($"I2P: {status.I2PConnected}, Tor: {status.TorAvailable}");
+            Console.WriteLine(rssContent);
         }
 
         private void OnChatsClick(object sender, EventArgs e)

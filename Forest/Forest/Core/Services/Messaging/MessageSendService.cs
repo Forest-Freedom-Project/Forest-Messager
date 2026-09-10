@@ -1,6 +1,7 @@
 using Forest.Models;
 using ForestMSG.Core.Enums;
 using ForestMSG.Core.Logging;
+using ForestMSG.Core.Services.Chatting;
 using ForestMSG.Core.Services.ContactManagement;
 using ForestMSG.Core.Services.FileSystem;
 using ForestMSG.Core.Services.TorrentControl;

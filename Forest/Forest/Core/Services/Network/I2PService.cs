@@ -35,7 +35,10 @@ namespace ForestMSG.Core.Services.Network
             try
             {
                 if (_isConnected)
-                { return true; }
+                { 
+                    Logger.WriteLog("[I2PService] Уже подключён, пропускаем");
+                    return true;
+                }
 
                 Logger.WriteLog("[I2PService] Подключение к SAM bridge...");
                 
