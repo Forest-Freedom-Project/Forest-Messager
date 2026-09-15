@@ -4,6 +4,7 @@ using ForestMSG.Core.Logging;
 using ForestMSG.Core.Services.Chatting;
 using ForestMSG.Core.Services.FileSystem;
 using ForestMSG.Core.Services.TorrentControl;
+using MonoTorrent;
 using static ForestMSG.Core.Services.Encryption.EncryptionService;
 
 namespace ForestMSG.Core.Services.Messaging
@@ -59,7 +60,7 @@ namespace ForestMSG.Core.Services.Messaging
                 }
                 catch (OperationCanceledException)
                 {
-                    
+
                 }
                 _listeningTask = null;
             }
@@ -111,28 +112,82 @@ namespace ForestMSG.Core.Services.Messaging
         private async Task CheckChatMessages(ChatSession session, CancellationToken cancellationToken)
         {
             string chatEncryptedFolder = Path.Combine(_chatsFolder, session.ChatId, "Encrypted");
-            if (!Directory.Exists(chatEncryptedFolder)) return;
-
-            var encFiles = Directory.GetFiles(chatEncryptedFolder, "*.enc")
-            .Where(f => !IsMessageProcessed(f))
-            .ToList();
-
-            if (encFiles.Count == 0) return;
-
-            Logger.WriteLog($"[MessageReceiveService] Найдено {encFiles.Count} новых сообщений в чате {session.ChatId}");
-
-            foreach (var filePath in encFiles)
+            if (Directory.Exists(chatEncryptedFolder))
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                var encFiles = Directory.GetFiles(chatEncryptedFolder, "*.enc")
+                    .Where(f => !IsMessageProcessed(f))
+                    .ToList();
 
-                try
+                foreach (var filePath in encFiles)
                 {
-                    await ProcessMessageFile(filePath, session);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        await ProcessMessageFile(filePath, session);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.WriteLog($"[MessageReceiveService] Ошибка обработки {filePath}: {ex.Message}");
+                    }
                 }
-                catch (Exception ex)
+            }
+
+            await CheckDhtForMessages(session, cancellationToken);
+        }
+
+        private async Task CheckDhtForMessages(ChatSession session, CancellationToken cancellationToken)
+        {
+            try
+            {
+                string dhtKey = _torrentService.ComputeDhtKey($"message_{session.ChatId}");
+                var infoHashes = await _torrentService.ReadFromDhtAsync(dhtKey);
+
+                if (infoHashes == null || infoHashes.Count == 0)
+                    return;
+
+                foreach (var infoHash in infoHashes)
                 {
-                    Logger.WriteLog($"[MessageReceiveService] Ошибка обработки {filePath}: {ex.Message}");
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        var magnet = new MagnetLink(InfoHash.FromHex(infoHash));
+                        string downloadPath = Path.Combine(_chatsFolder, session.ChatId, "Downloaded");
+                        Directory.CreateDirectory(downloadPath);
+
+                        var manager = await _torrentService.AddMagnetAsync(magnet, downloadPath);
+                        await manager.StartAsync();
+
+                        int waitTime = 0;
+                        while (manager.Bitfield.PercentComplete < 100 && waitTime < 60000)
+                        {
+                            await Task.Delay(1000);
+                            waitTime += 1000;
+                        }
+
+                        var encFile = manager.Torrent?.Files.FirstOrDefault(f =>
+                            f.Path.EndsWith(".enc", StringComparison.OrdinalIgnoreCase));
+
+                        if (encFile != null)
+                        {
+                            string downloadedPath = Path.Combine(downloadPath, encFile.Path);
+                            if (File.Exists(downloadedPath))
+                            {
+                                await ProcessMessageFile(downloadedPath, session);
+                            }
+                        }
+
+                        await manager.StopAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.WriteLog($"[MessageReceiveService] Ошибка скачивания {infoHash}: {ex.Message}");
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLog($"[MessageReceiveService] Ошибка DHT-поиска: {ex.Message}");
             }
         }
 

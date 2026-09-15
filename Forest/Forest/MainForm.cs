@@ -1,10 +1,7 @@
 using Eto.Forms;
-using System.Threading.Tasks;
-using System;
 using ForestMSG.Application.GUI;
 using static ForestMSG.Core.Services.Encryption.EncryptionService;
 using ForestMSG.Core.Services.Network;
-using ForestMSG.Core.Logging;
 using ForestMSG.Tests;
 
 namespace Forest
