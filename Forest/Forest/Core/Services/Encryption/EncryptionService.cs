@@ -1,17 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Chaos.NaCl;
 using Forest.Models;
 using ForestMSG.Core.Enums;
-using ForestMSG.Core.ErrorManagement;
+using ForestMSG.Core.Logging;
 using ForestMSG.Core.Services.FileSystem;
 
 namespace ForestMSG.Core.Services.Encryption
@@ -20,39 +15,39 @@ namespace ForestMSG.Core.Services.Encryption
     {
         public class EncryptedMessagePacket
         {
-            public string ChatId { get; set; }
-            public string SenderId { get; set; }
+            public string? ChatId { get; set; }
+            public string? SenderId { get; set; }
             public ulong MessageId { get; set; }
             public DateTime SentAt { get; set; }
             public MessageType MessageType { get; set; }
 
-            public byte[] Ciphertext { get; set; }
-            public byte[] Nonce { get; set; }
-            public byte[] AuthTag { get; set; }
+            public byte[]? Ciphertext { get; set; }
+            public byte[]? Nonce { get; set; }
+            public byte[]? AuthTag { get; set; }
 
-            public byte[] Signature { get; set; }
+            public byte[]? Signature { get; set; }
 
             public string ToJson() => JsonSerializer.Serialize(this);
-            public static EncryptedMessagePacket FromJson(string json) => JsonSerializer.Deserialize<EncryptedMessagePacket>(json);
+            public static EncryptedMessagePacket? FromJson(string json) => JsonSerializer.Deserialize<EncryptedMessagePacket>(json);
         }
 
         public class EncryptedMediaFile
         {
-            public string OriginalFileName { get; set; }
-            public string MediaType { get; set; }
-            public byte[] Ciphertext { get; set; }
-            public byte[] Nonce { get; set; }
-            public byte[] Tag { get; set; }
+            public string? OriginalFileName { get; set; }
+            public string? MediaType { get; set; }
+            public byte[]? Ciphertext { get; set; }
+            public byte[]? Nonce { get; set; }
+            public byte[]? Tag { get; set; }
         }
 
         public class ChatSession
         {
-            public string ChatId { get; set; }
-            public byte[] RootKey { get; set; }
-            public byte[] ChatSalt { get; set; }
-            public string SelfId { get; set; }
-            public string PeerId { get; set; }
-            public byte[] PeerPublicKey { get; set; }
+            public string? ChatId { get; set; }
+            public byte[]? RootKey { get; set; }
+            public byte[]? ChatSalt { get; set; }
+            public string? SelfId { get; set; }
+            public string? PeerId { get; set; }
+            public byte[]? PeerPublicKey { get; set; }
             public ulong NextMessageId { get; set; }
         }
 
@@ -417,16 +412,16 @@ namespace ForestMSG.Core.Services.Encryption
             private class MessageMetadata
             {
                 public ulong Id { get; set; }
-                public string SenderId { get; set; }
-                public string ChatId { get; set; }
+                public string? SenderId { get; set; }
+                public string? ChatId { get; set; }
                 public MessageType MessageType { get; set; }
                 public DateTime SentAt { get; set; }
                 public bool IsDownloaded { get; set; }
-                public string TextFilePath { get; set; }
-                public List<string> AudioFiles { get; set; }
-                public List<string> VoicesFiles { get; set; }
-                public List<string> VideoFiles { get; set; }
-                public List<string> PictureFiles { get; set; }
+                public string? TextFilePath { get; set; }
+                public List<string>? AudioFiles { get; set; }
+                public List<string>? VoicesFiles { get; set; }
+                public List<string>? VideoFiles { get; set; }
+                public List<string>? PictureFiles { get; set; }
             }
 
             private void ValidateParameters(Message message, ChatSession session, byte[] senderPrivateKey)
@@ -711,10 +706,10 @@ namespace ForestMSG.Core.Services.Encryption
 
             private class ExportData
             {
-                public string Version { get; set; }
-                public string PublicKey { get; set; }
-                public string EncryptedPrivateKey { get; set; }
-                public string EncryptionPublicKey { get; set; }
+                public string? Version { get; set; }
+                public string? PublicKey { get; set; }
+                public string? EncryptedPrivateKey { get; set; }
+                public string? EncryptionPublicKey { get; set; }
                 public DateTime GeneratedAt { get; set; }
             }
 
@@ -770,7 +765,7 @@ namespace ForestMSG.Core.Services.Encryption
                 }
                 catch (Exception e)
                 {
-                    ErrorHandler.LogError($"[Encryption Service] {e}");
+                    Logger.WriteLog($"[Encryption Service] {e}");
                 }
             }
 
@@ -813,7 +808,7 @@ namespace ForestMSG.Core.Services.Encryption
                 }
                 catch (Exception e)
                 {
-                    ErrorHandler.LogError($"[Encryption Service] {e}");
+                    Logger.WriteLog($"[Encryption Service] {e}");
                     return null;
                 }
             }

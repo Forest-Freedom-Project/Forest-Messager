@@ -2,7 +2,7 @@ using System.Drawing;
 using System.IO;
 using QRCoder;
 
-namespace ForestMSG.Core.Services.ContactManagement
+namespace ForestMSG.Core.Utils.QRCodes
 {
     public class QRCodeCreator
     {

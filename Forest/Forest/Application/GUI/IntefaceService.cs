@@ -1,6 +1,5 @@
 using Eto.Forms;
 using Eto.Drawing;
-using System;
 
 namespace ForestMSG.Application.GUI
 {
@@ -26,12 +25,12 @@ namespace ForestMSG.Application.GUI
             }
             public class Theme
             {
-                public string Name { get; set; }
+                public string? Name { get; set; }
                 public Color BackgroundColor { get; set; } = DefaultColors.Background;
                 public Color PrimaryColor { get; set; } = DefaultColors.Accent;
                 public Color TextColor { get; set; } = DefaultColors.TextPrimary;
                 public SystemFont DefaultFont { get; set; } = SystemFont.Default;
-                public SystemFont BoldFolt { get; set; } = SystemFont.Bold;
+                public SystemFont BoldFsolt { get; set; } = SystemFont.Bold;
             }
             public class ThemeBuilder
             {
@@ -61,30 +60,30 @@ namespace ForestMSG.Application.GUI
         {
             public class MainWindow : Panel
             {
-                public Panel LeftPanel { get; private set; }
-                public Panel MiddlePanel { get; private set; }
-                public Panel RightPanel { get; private set; }
-                public TableLayout MainLayout { get; private set; }
+                public Panel? LeftPanel { get; private set; }
+                public Panel? MiddlePanel { get; private set; }
+                public Panel? RightPanel { get; private set; }
+                public TableLayout? MainLayout { get; private set; }
 
-                public Button ChatsButton { get; private set; }
-                public Button ContactsButton { get; private set; }
-                public Button SettingsButton { get; private set; }
-                public Button ProfileButton { get; private set; }
-                public Button AddContactButton { get; private set; }
+                public Button? ChatsButton { get; private set; }
+                public Button? ContactsButton { get; private set; }
+                public Button? SettingsButton { get; private set; }
+                public Button? ProfileButton { get; private set; }
+                public Button? AddContactButton { get; private set; }
 
-                public TextBox SearchBox { get; private set; }
-                public Scrollable ChatListScroll { get; private set; }
-                public StackLayout ChatListLayout { get; private set; }
+                public TextBox? SearchBox { get; private set; }
+                public Scrollable? ChatListScroll { get; private set; }
+                public StackLayout? ChatListLayout { get; private set; }
 
-                public Label ChatTitle { get; private set; }
-                public Scrollable MessagesScroll { get; private set; }
-                public StackLayout MessagesLayout { get; private set; }
-                public TableLayout InputLayout { get; private set; }
-                public TextBox MessageInput { get; private set; }
-                public Button SendButton { get; private set; }
-                public Button AttachButton { get; private set; }
+                public Label? ChatTitle { get; private set; }
+                public Scrollable? MessagesScroll { get; private set; }
+                public StackLayout? MessagesLayout { get; private set; }
+                public TableLayout? InputLayout { get; private set; }
+                public TextBox? MessageInput { get; private set; }
+                public Button? SendButton { get; private set; }
+                public Button? AttachButton { get; private set; }
 
-                private ThemeService.Theme _currentTheme;
+                private ThemeService.Theme? _currentTheme;
 
                 public MainWindow()
                 {

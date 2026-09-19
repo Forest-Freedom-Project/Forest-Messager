@@ -1,8 +1,5 @@
-using System;
-using System.IO;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using ForestMSG.Core.Models;
 using ForestMSG.Core.Services.Encryption;
 using ForestMSG.Core.Services.FileSystem;
@@ -14,9 +11,9 @@ namespace ForestMSG.Core.Services.ContactManagement
     public class ContactService
     {
         private readonly string _contactsFolder;
-        private readonly TorrentService.ContactTorrentService _torrentService;
+        private readonly TorrentService.ContactTorrentService? _torrentService;
 
-        public ContactService(TorrentService.ContactTorrentService torrentService = null)
+        public ContactService(TorrentService.ContactTorrentService? torrentService = null)
         {
             _contactsFolder = Path.Combine(DirectoryNames.MainFolder, DirectoryNames.Contacts);
             _torrentService = torrentService;
@@ -104,7 +101,7 @@ namespace ForestMSG.Core.Services.ContactManagement
             await File.WriteAllTextAsync(keysPath, encryptedKeys);
         }
 
-        public async Task<Contact> LoadContactAsync(string publicId)
+        public async Task<Contact?> LoadContactAsync(string publicId)
         {
             if (string.IsNullOrEmpty(publicId))
             { throw new ArgumentException("PublicId не может быть пустым"); }
@@ -118,7 +115,7 @@ namespace ForestMSG.Core.Services.ContactManagement
             return JsonSerializer.Deserialize<Contact>(json);
         }
 
-        public async Task<Contact> LoadMyContactAsync()
+        public async Task<Contact?> LoadMyContactAsync()
         {
             string mePath = Path.Combine(_contactsFolder, "Me", "Me.json");
             if (!File.Exists(mePath))
@@ -128,7 +125,7 @@ namespace ForestMSG.Core.Services.ContactManagement
             return JsonSerializer.Deserialize<Contact>(json);
         }
 
-        public async Task<Contact> FindContactInDHTAsync(string publicId)
+        public async Task<Contact?> FindContactInDHTAsync(string publicId)
         {
             if (_torrentService == null)
             { throw new InvalidOperationException("TorrenService не инициализирован"); }

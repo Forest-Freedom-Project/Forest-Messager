@@ -1,12 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading.Tasks;
-using DotI2p;
 using Forest.Models;
 using ForestMSG.Core.Enums;
-using ForestMSG.Core.ErrorManagement;
 using ForestMSG.Core.Logging;
+using ForestMSG.Core.Services.Chatting;
 using ForestMSG.Core.Services.ContactManagement;
 using ForestMSG.Core.Services.FileSystem;
 using ForestMSG.Core.Services.TorrentControl;
@@ -110,7 +105,7 @@ namespace ForestMSG.Core.Services.Messaging
             }
             catch (Exception ex)
             {
-                ErrorHandler.LogError($"[MessageSendService] Ошибка отправки {ex.Message}");
+                Logger.WriteLog($"[MessageSendService] Ошибка отправки {ex.Message}");
                 throw;
             }
         }

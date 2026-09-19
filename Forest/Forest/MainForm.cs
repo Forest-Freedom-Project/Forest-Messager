@@ -1,10 +1,7 @@
 using Eto.Forms;
-using System.Threading.Tasks;
-using System;
 using ForestMSG.Application.GUI;
 using static ForestMSG.Core.Services.Encryption.EncryptionService;
 using ForestMSG.Core.Services.Network;
-using ForestMSG.Core.Logging;
 using ForestMSG.Tests;
 
 namespace Forest
@@ -58,6 +55,20 @@ namespace Forest
             await I2PServiceTest.RunTest();
 
             await TorServiceTest.RunTest();
+
+            var i2pService = new I2PService();
+            var torService = new TorService();
+            var proxyService = new ProxyService(i2pService, torService);
+
+            await proxyService.InitializeAsync();
+
+            var i2p = proxyService.GetI2PService();
+
+            var rssContent = await proxyService.GetExternalAsync("https://example.com");
+
+            var status = proxyService.GetStatus();
+            Console.WriteLine($"I2P: {status.I2PConnected}, Tor: {status.TorAvailable}");
+            Console.WriteLine(rssContent);
         }
 
         private void OnChatsClick(object sender, EventArgs e)

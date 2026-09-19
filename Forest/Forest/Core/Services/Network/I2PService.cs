@@ -1,8 +1,5 @@
-using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading;
-using System.Threading.Tasks;
 using DotI2p;
 using ForestMSG.Core.Logging;
 
@@ -38,7 +35,10 @@ namespace ForestMSG.Core.Services.Network
             try
             {
                 if (_isConnected)
-                { return true; }
+                { 
+                    Logger.WriteLog("[I2PService] Уже подключён, пропускаем");
+                    return true;
+                }
 
                 Logger.WriteLog("[I2PService] Подключение к SAM bridge...");
                 

@@ -1,8 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
-using ForestMSG.Core.ErrorManagement;
 using ForestMSG.Core.Services.FileSystem;
 
 namespace ForestMSG.Core.Logging
@@ -22,7 +20,8 @@ namespace ForestMSG.Core.Logging
         }
         public static void WriteLog(string LogText)
         {     
-            var folderPath = Path.Combine(DirectoryNames.MainFolder, $"{DateTime.Now:dd:MM:yyyy}");
+            var folderPath = Path.Combine(DirectoryNames.MainFolder, "logs", $"{DateTime.Now:dd:MM:yyyy}");
+
             if (!Directory.Exists(folderPath))
             {
                 Directory.CreateDirectory(folderPath);
@@ -38,7 +37,8 @@ namespace ForestMSG.Core.Logging
 
                 if (File.Exists(jsonFilePath))
                 {
-                    todayLogs = JsonSerializer.Deserialize<List<Log>>(File.ReadAllText(jsonFilePath));
+                    string existingJson = File.ReadAllText(jsonFilePath, Encoding.UTF8);
+                    todayLogs = JsonSerializer.Deserialize<List<Log>>(existingJson) ?? new List<Log>();
                 }
 
                 var log = new Log
@@ -46,20 +46,26 @@ namespace ForestMSG.Core.Logging
                     LogText = LogText,
                     LogDateTime = DateTime.Now
                 };
-                todayLogs.Add(log);
+                todayLogs.Add(log);                
 
-                var jsonLog = JsonSerializer.Serialize(todayLogs);
+                var jsonLog = JsonSerializer.Serialize(todayLogs, JsonOptions);
 
-                File.WriteAllText(jsonFilePath, jsonLog);
+                File.WriteAllText(jsonFilePath, jsonLog, new UTF8Encoding(false));
             }
             catch (Exception e)
             {
-                ErrorHandler.LogError(e.ToString());
+                File.WriteAllText($"ELog_{DateTime.Now:dd:MM:yyyy}.json", e.ToString());
             }
             finally
             {                
                 Console.WriteLine($"[Logger] {jsonFileName} был изменен | {DateTime.Now:g}");
             }
         }
+
+        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping  
+        };
     }
 }

@@ -1,17 +1,14 @@
-using System;
 using System.Collections.Concurrent;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using ForestMSG.Core.Models;
 using ForestMSG.Core.Services.TorrentControl;
 using ForestMSG.Core.Logging;
 using static ForestMSG.Core.Services.Encryption.EncryptionService;
+using ForestMSG.Core.Services.ContactManagement;
 
-namespace ForestMSG.Core.Services.ContactManagement
+namespace ForestMSG.Core.Services.Chatting
 {
     public class HandshakeService : IDisposable
     {
@@ -19,10 +16,10 @@ namespace ForestMSG.Core.Services.ContactManagement
         private readonly ContactService _contactService;
         private readonly ConcurrentDictionary<string, ChatSession> _sessions;
         private readonly ConcurrentDictionary<string, CancellationTokenSource> _handshakeTimers;
-        private CancellationTokenSource _listenerCts;
+        private CancellationTokenSource? _listenerCts;
         private bool _isListening;
 
-        public event Func<string, string, Task<bool>> HandshakeRequested;
+        public event Func<string, string, Task<bool>>? HandshakeRequested;
 
         public HandshakeService(
             TorrentService.ContactTorrentService torrentService,
@@ -62,8 +59,8 @@ namespace ForestMSG.Core.Services.ContactManagement
                 ChatId = chatId,
                 InitiatorId = myPublicId,
                 RecipientId = peerId,
-                EncryptedRootKey = EncryptForRecipient(rootKey, peerEncryptionKey),
-                EncryptedChatSalt = EncryptForRecipient(chatSalt, peerEncryptionKey),
+                EncryptedRootKey = EncryptForRecipient(rootKey, myEncryptionPrivateKey, peerEncryptionKey),
+                EncryptedChatSalt = EncryptForRecipient(chatSalt, myEncryptionPrivateKey, peerEncryptionKey),
 
                 CreatedAt = DateTime.UtcNow,
                 TTL = 300
@@ -119,7 +116,6 @@ namespace ForestMSG.Core.Services.ContactManagement
                     catch (Exception ex)
                     {
                         Logger.WriteLog($"[Handshake] Ошибка сканирования: {ex.Message}");
-                        ErrorManagement.ErrorHandler.LogError($"[Handshake] Ошибка сканирования: {ex.Message}");
                         await Task.Delay(TimeSpan.FromSeconds(30));
                     }
                 }
@@ -178,12 +174,12 @@ namespace ForestMSG.Core.Services.ContactManagement
                     Logger.WriteLog($"[Handshake] Неверная подпись от {handshake.InitiatorId}");
                     return;
                 }
-
+                
                 byte[] peerEncryptionKey = Convert.FromBase64String(initiatorContact.EncryptionKey);
-                byte[] rootKey = DecryptForRecipient(handshake.EncryptedRootKey, myEncryptionPrivateKey);
-                byte[] chatSalt = DecryptForRecipient(handshake.EncryptedChatSalt, myEncryptionPrivateKey);
+                byte[] rootKey = DecryptForRecipient(handshake.EncryptedRootKey, myEncryptionPrivateKey, peerEncryptionKey);
+                byte[] chatSalt = DecryptForRecipient(handshake.EncryptedChatSalt, myEncryptionPrivateKey, peerEncryptionKey);
 
-                if(_sessions.ContainsKey(handshake.ChatId))
+                if (_sessions.ContainsKey(handshake.ChatId))
                 {
                     Logger.WriteLog($"[Handshake] Сессия {handshake.ChatId} уже существует");
                     return;
@@ -221,7 +217,6 @@ namespace ForestMSG.Core.Services.ContactManagement
             catch (Exception ex)
             {
                 Logger.WriteLog($"[Handshake] Ошибка обработки: {ex.Message}");
-                ErrorManagement.ErrorHandler.LogError($"[Handshake] Ошибка обработки: {ex}");
             }
         }
 
@@ -261,17 +256,32 @@ namespace ForestMSG.Core.Services.ContactManagement
             }
         }
 
-        public ChatSession GetSession(string chatId)
+        public ChatSession? GetSession(string chatId)
         {
             _sessions.TryGetValue(chatId, out var session);
             return session;
         }
+
+        public List<ChatSession> GetAllSessions()
+        {
+            return new (_sessions.Values);
+        }
+
+        public void RemoveSession(string chatId)
+        {
+            if (_sessions.TryRemove(chatId, out _))
+            {
+                Logger.WriteLog($"[HandshakeService] Сессия {chatId} удалена");
+            }
+        }
+
         public bool HasSession(string chatId) => _sessions.ContainsKey(chatId);
 
-        private byte[] DecryptForRecipient(byte[] encryptedData, byte[] privateKey)
+        private byte[] DecryptForRecipient(byte[] encryptedData, byte[] myPrivateKey, byte[] peerPublicKey)
         {
-            using var sha = SHA256.Create();
-            byte[] key = sha.ComputeHash(privateKey);
+            byte[] sharedSecret = CryptoKeysGenerator.ComputeSharedSecret(myPrivateKey, peerPublicKey);
+
+            byte[] key = HKDF(sharedSecret, "FOREST_HANDSHAKE_KEY", 32);
 
             byte[] nonce = new byte[12];
             byte[] ciphertext = new byte[encryptedData.Length - 12 - 16];
@@ -288,10 +298,11 @@ namespace ForestMSG.Core.Services.ContactManagement
             return plaintext;
         }
 
-        private byte[] EncryptForRecipient(byte[] data, byte[] publicKey)
+        private byte[] EncryptForRecipient(byte[] data, byte[] myPrivateKey, byte[] peerPublicKey)
         {
-            using var sha = SHA256.Create();
-            byte[] key = sha.ComputeHash(publicKey);
+            byte[] sharedSecret = CryptoKeysGenerator.ComputeSharedSecret(myPrivateKey, peerPublicKey);
+
+            byte[] key = HKDF(sharedSecret, "FOREST_HANDSHAKE_KEY", 32);
 
             byte[] nonce = new byte[12];
             using var rng = RandomNumberGenerator.Create();
@@ -309,6 +320,15 @@ namespace ForestMSG.Core.Services.ContactManagement
             Buffer.BlockCopy(tag, 0, result, nonce.Length + ciphertext.Length, tag.Length);
 
             return result;
+        }
+
+        private byte[] HKDF(byte[] inputKeyMaterial, string info, int outputLength)
+        {
+            using var hkdf = new HMACSHA256(inputKeyMaterial);
+            byte[] infoBytes = Encoding.UTF8.GetBytes(info);
+            byte[] prk = hkdf.ComputeHash(infoBytes);
+            byte[] okm = hkdf.ComputeHash(prk.Concat(infoBytes).ToArray());
+            return okm.Take(outputLength).ToArray();
         }
 
         private byte[] DeriveRootKey(byte[] sharedSecret, byte[] chatSalt)
