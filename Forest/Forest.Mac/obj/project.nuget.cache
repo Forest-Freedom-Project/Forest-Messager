@@ -1,28 +1,50 @@
 {
   "version": 2,
-  "dgSpecHash": "+LE+ChmpNhw=",
-  "success": true,
-  "projectFilePath": "/run/media/coalyni/Ommi/ForestMSG/Forest/Forest/Forest.Mac/Forest.Mac.csproj",
-  "expectedPackageFiles": [
-    "/home/coalyni/.nuget/packages/chaos.nacl.standard/1.0.0/chaos.nacl.standard.1.0.0.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/doti2p/0.6.3/doti2p.0.6.3.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/eto.forms/2.11.0/eto.forms.2.11.0.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/eto.platform.mac64/2.10.2/eto.platform.mac64.2.10.2.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/microsoft.win32.systemevents/6.0.0/microsoft.win32.systemevents.6.0.0.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/mono.nat/3.0.0/mono.nat.3.0.0.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/monotorrent/3.0.2/monotorrent.3.0.2.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/multiformats.base/2.0.2/multiformats.base.2.0.2.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/qrcoder/1.8.0/qrcoder.1.8.0.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/reusabletasks/4.0.0/reusabletasks.4.0.0.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/system.drawing.common/6.0.0/system.drawing.common.6.0.0.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/system.io.hashing/10.0.8/system.io.hashing.10.0.8.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/zxing.net/0.16.11/zxing.net.0.16.11.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/microsoft.netcore.app.runtime.osx-x64/10.0.11/microsoft.netcore.app.runtime.osx-x64.10.0.11.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/microsoft.netcore.app.runtime.osx-arm64/10.0.11/microsoft.netcore.app.runtime.osx-arm64.10.0.11.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/microsoft.aspnetcore.app.runtime.osx-x64/10.0.11/microsoft.aspnetcore.app.runtime.osx-x64.10.0.11.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/microsoft.aspnetcore.app.runtime.osx-arm64/10.0.11/microsoft.aspnetcore.app.runtime.osx-arm64.10.0.11.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/microsoft.netcore.app.host.osx-x64/10.0.11/microsoft.netcore.app.host.osx-x64.10.0.11.nupkg.sha512",
-    "/home/coalyni/.nuget/packages/microsoft.netcore.app.host.osx-arm64/10.0.11/microsoft.netcore.app.host.osx-arm64.10.0.11.nupkg.sha512"
-  ],
-  "logs": []
+  "dgSpecHash": "zR3ZaMPh0Es=",
+  "success": false,
+  "projectFilePath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+  "expectedPackageFiles": [],
+  "logs": [
+    {
+      "code": "NU1301",
+      "level": "Error",
+      "message": "Не удалось загрузить индекс служб для источника https://api.nuget.org/v3/index.json.\n  Resource temporarily unavailable (api.nuget.org:443)\n  Resource temporarily unavailable",
+      "projectPath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "filePath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "targetGraphs": []
+    },
+    {
+      "code": "NU1301",
+      "level": "Error",
+      "message": "Не удалось загрузить индекс служб для источника https://api.nuget.org/v3/index.json.\n  Resource temporarily unavailable (api.nuget.org:443)\n  Resource temporarily unavailable",
+      "projectPath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "filePath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "targetGraphs": []
+    },
+    {
+      "code": "NU1301",
+      "level": "Error",
+      "message": "Не удалось загрузить индекс служб для источника https://api.nuget.org/v3/index.json.\n  Resource temporarily unavailable (api.nuget.org:443)\n  Resource temporarily unavailable",
+      "projectPath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "filePath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "targetGraphs": []
+    },
+    {
+      "code": "NU1301",
+      "level": "Error",
+      "message": "Не удалось загрузить индекс служб для источника https://api.nuget.org/v3/index.json.\n  Resource temporarily unavailable (api.nuget.org:443)\n  Resource temporarily unavailable",
+      "projectPath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "filePath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "targetGraphs": []
+    },
+    {
+      "code": "NU1900",
+      "level": "Warning",
+      "message": "Произошла ошибка при получении данных уязвимости пакета: Не удалось загрузить индекс служб для источника https://api.nuget.org/v3/index.json.",
+      "projectPath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "warningLevel": 1,
+      "filePath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Mac/Forest.Mac.csproj",
+      "targetGraphs": []
+    }
+  ]
 }

@@ -939,33 +939,33 @@
     ]
   },
   "packageFolders": {
-    "/home/coalyni/.nuget/packages/": {}
+    "/home/coalynilap/.nuget/packages/": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "/run/media/coalyni/Ommi/ForestMSG/Forest/Forest/Forest.Wpf/Forest.Wpf.csproj",
+      "projectUniqueName": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Wpf/Forest.Wpf.csproj",
       "projectName": "Forest.Wpf",
-      "projectPath": "/run/media/coalyni/Ommi/ForestMSG/Forest/Forest/Forest.Wpf/Forest.Wpf.csproj",
-      "packagesPath": "/home/coalyni/.nuget/packages/",
-      "outputPath": "/run/media/coalyni/Ommi/ForestMSG/Forest/Forest/Forest.Wpf/obj/",
+      "projectPath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Wpf/Forest.Wpf.csproj",
+      "packagesPath": "/home/coalynilap/.nuget/packages/",
+      "outputPath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest.Wpf/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "/home/coalyni/.nuget/NuGet/NuGet.Config"
+        "/home/coalynilap/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net10.0-windows"
       ],
       "sources": {
-        "/usr/lib64/dotnet/library-packs": {},
+        "/usr/lib/dotnet/library-packs": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
         "net10.0-windows7.0": {
           "targetAlias": "net10.0-windows",
           "projectReferences": {
-            "/run/media/coalyni/Ommi/ForestMSG/Forest/Forest/Forest/Forest.csproj": {
-              "projectPath": "/run/media/coalyni/Ommi/ForestMSG/Forest/Forest/Forest/Forest.csproj"
+            "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest/Forest.csproj": {
+              "projectPath": "/home/coalynilap/GithubProjects/ForestMSG/Forest/Forest/Forest.csproj"
             }
           }
         }
@@ -1007,7 +1007,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "/usr/lib64/dotnet/sdk/10.0.111/PortableRuntimeIdentifierGraph.json",
+        "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/10.0.112/PortableRuntimeIdentifierGraph.json",
         "packagesToPrune": {
           "Microsoft.CSharp": "(,4.7.32767]",
           "Microsoft.VisualBasic": "(,10.4.32767]",
@@ -1286,6 +1286,12 @@
     }
   },
   "logs": [
+    {
+      "code": "NU1900",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "Произошла ошибка при получении данных уязвимости пакета: Не удалось загрузить индекс служб для источника https://api.nuget.org/v3/index.json."
+    },
     {
       "code": "NU1701",
       "level": "Warning",
