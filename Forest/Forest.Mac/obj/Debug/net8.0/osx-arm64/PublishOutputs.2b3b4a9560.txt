@@ -1,2 +1,0 @@
-/run/media/coalyni/Ommi/Forest/Forest/Forest.Mac/obj/Debug/net8.0/macbuild/publish/osx-arm64/Forest.pdb
-/run/media/coalyni/Ommi/Forest/Forest/Forest.Mac/obj/Debug/net8.0/macbuild/publish/osx-arm64/Forest.Mac
