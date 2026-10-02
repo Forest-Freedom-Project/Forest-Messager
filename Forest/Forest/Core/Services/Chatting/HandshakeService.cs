@@ -2,11 +2,12 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using ForestMSG.Core.Models;
-using ForestMSG.Core.Services.TorrentControl;
 using ForestMSG.Core.Logging;
-using static ForestMSG.Core.Services.Encryption.EncryptionService;
+using ForestMSG.Core.Models;
 using ForestMSG.Core.Services.ContactManagement;
+using ForestMSG.Core.Services.Network;
+using ForestMSG.Core.Services.TorrentControl;
+using static ForestMSG.Core.Services.Encryption.EncryptionService;
 
 namespace ForestMSG.Core.Services.Chatting
 {
@@ -14,6 +15,7 @@ namespace ForestMSG.Core.Services.Chatting
     {
         private readonly TorrentService.ContactTorrentService _torrentService;
         private readonly ContactService _contactService;
+        private readonly I2PMessageChannel _i2pChannel;
         private readonly ConcurrentDictionary<string, ChatSession> _sessions;
         private readonly ConcurrentDictionary<string, CancellationTokenSource> _handshakeTimers;
         private CancellationTokenSource? _listenerCts;
@@ -23,11 +25,12 @@ namespace ForestMSG.Core.Services.Chatting
 
         public HandshakeService(
             TorrentService.ContactTorrentService torrentService,
-            ContactService contactService
-        )
+            ContactService contactService,
+            I2PMessageChannel i2pChannel)
         {
             _torrentService = torrentService;
             _contactService = contactService;
+            _i2pChannel = i2pChannel;
             _sessions = new ConcurrentDictionary<string, ChatSession>();
             _handshakeTimers = new ConcurrentDictionary<string, CancellationTokenSource>();
             _isListening = false;
@@ -37,21 +40,17 @@ namespace ForestMSG.Core.Services.Chatting
             string peerId,
             byte[] myPrivateKey,
             byte[] myEncryptionPrivateKey,
-            string myPublicId
-        )
+            string myPublicId)
         {
             var peerContact = await _contactService.LoadContactAsync(peerId);
-            if(peerContact == null)
-            {
+            if (peerContact == null)
                 throw new Exception($"Контакт {peerId} не найден локально. Сначала найдите его через DHT.");
-            }
 
             byte[] peerEncryptionKey = Convert.FromBase64String(peerContact.EncryptionKey);
             byte[] sharedSecret = CryptoKeysGenerator.ComputeSharedSecret(myEncryptionPrivateKey, peerEncryptionKey);
 
             string chatId = GenerateChatId(myPublicId, peerId);
             byte[] chatSalt = DeriveChatSalt(myPublicId, peerId);
-
             byte[] rootKey = DeriveRootKey(sharedSecret, chatSalt);
 
             var handshake = new HandshakePacket
@@ -61,7 +60,6 @@ namespace ForestMSG.Core.Services.Chatting
                 RecipientId = peerId,
                 EncryptedRootKey = EncryptForRecipient(rootKey, myEncryptionPrivateKey, peerEncryptionKey),
                 EncryptedChatSalt = EncryptForRecipient(chatSalt, myEncryptionPrivateKey, peerEncryptionKey),
-
                 CreatedAt = DateTime.UtcNow,
                 TTL = 300
             };
@@ -69,7 +67,23 @@ namespace ForestMSG.Core.Services.Chatting
             byte[] handshakeData = JsonSerializer.SerializeToUtf8Bytes(handshake);
             handshake.Signature = CryptoKeysGenerator.SignData(handshakeData, myPrivateKey);
 
-            await _torrentService.PublishHandshakeAsync(handshake);
+            string infoHash = await _torrentService.PublishHandshakeAsync(handshake);
+
+            if (!string.IsNullOrEmpty(peerContact.I2PDestination))
+            {
+                bool sent = await _i2pChannel.SendHandshakeInfoHashAsync(
+                    peerContact.I2PDestination,
+                    chatId,
+                    infoHash
+                );
+
+                if (!sent)
+                    Logger.WriteLog($"[Handshake] Не удалось отправить InfoHash для {chatId}");
+            }
+            else
+            {
+                Logger.WriteLog($"[Handshake] У контакта {peerId} нет I2P-адреса");
+            }
 
             var session = new ChatSession
             {
@@ -92,27 +106,21 @@ namespace ForestMSG.Core.Services.Chatting
 
         public async Task StartListeningAsync(string myPublicId, byte[] myPrivateKey, byte[] myEncryptionPrivateKey)
         {
-            if(_isListening)
-            {
-                return;
-            }
+            if (_isListening) return;
 
             _listenerCts = new CancellationTokenSource();
             _isListening = true;
 
             await Task.Run(async () =>
             {
-                while(!_listenerCts.Token.IsCancellationRequested)
+                while (!_listenerCts.Token.IsCancellationRequested)
                 {
                     try
                     {
                         await ScanForHandshakeAsync(myPublicId, myPrivateKey, myEncryptionPrivateKey);
                         await Task.Delay(TimeSpan.FromSeconds(10), _listenerCts.Token);
                     }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
+                    catch (OperationCanceledException) { break; }
                     catch (Exception ex)
                     {
                         Logger.WriteLog($"[Handshake] Ошибка сканирования: {ex.Message}");
@@ -129,15 +137,65 @@ namespace ForestMSG.Core.Services.Chatting
             _listenerCts?.Dispose();
         }
 
-        private async Task ScanForHandshakeAsync(string myPublicId, byte[] myPrivateKey, byte[] myEncryptionPrivateKey)
+        private async Task ScanForHandshakeAsync(
+            string myPublicId,
+            byte[] myPrivateKey,
+            byte[] myEncryptionPrivateKey)
         {
-            var handshakes = await _torrentService.FindHandshakesForMeAsync(myPublicId);
-            if(handshakes == null || !handshakes.Any())
-            { return; }
-
-            foreach (var handshake in handshakes)
+            while (_i2pChannel.TryDequeue(out var signal))
             {
-                await ProcessHandshakeAsync(handshake, myPublicId, myPrivateKey, myEncryptionPrivateKey);
+                await ProcessSignalAsync(signal, myPublicId, myPrivateKey, myEncryptionPrivateKey);
+            }
+
+            // 2. Ищем локальные рукопожатия (на случай, если файл уже скачан)
+            var handshakes = await _torrentService.FindHandshakesForMeAsync(myPublicId);
+            if (handshakes != null && handshakes.Any())
+            {
+                foreach (var handshake in handshakes)
+                {
+                    await ProcessHandshakeAsync(handshake, myPublicId, myPrivateKey, myEncryptionPrivateKey);
+                }
+            }
+        }
+
+        private async Task ProcessSignalAsync(
+            string signal,
+            string myPublicId,
+            byte[] myPrivateKey,
+            byte[] myEncryptionPrivateKey)
+        {
+            try
+            {
+                var (type, args) = I2PMessageChannel.ParseMessage(signal);
+
+                switch (type)
+                {
+                    case "HANDSHAKE":
+                        if (args.Length >= 2)
+                        {
+                            string chatId = args[0];
+                            string infoHash = args[1];
+                            Logger.WriteLog($"[Handshake] Получен сигнал HANDSHAKE: {chatId}");
+
+                            await _torrentService.DownloadHandshakeByInfoHashAsync(infoHash, chatId);
+                        }
+                        break;
+
+                    case "CONFIRMATION":
+                        if (args.Length >= 2)
+                        {
+                            string chatId = args[0];
+                            string infoHash = args[1];
+                            Logger.WriteLog($"[Handshake] Получен сигнал CONFIRMATION: {chatId}");
+
+                            await _torrentService.DownloadHandshakeByInfoHashAsync(infoHash, chatId);
+                        }
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLog($"[Handshake] Ошибка обработки сигнала: {ex.Message}");
             }
         }
 
@@ -149,7 +207,7 @@ namespace ForestMSG.Core.Services.Chatting
         {
             try
             {
-                if(handshake.IsExpired())
+                if (handshake.IsExpired())
                 {
                     Logger.WriteLog($"[Handshake] Рукопожатие {handshake.ChatId} просрочено");
                     return;
@@ -169,12 +227,12 @@ namespace ForestMSG.Core.Services.Chatting
                     Convert.FromBase64String(initiatorContact.PublicKey)
                 );
 
-                if(!isValid)
+                if (!isValid)
                 {
                     Logger.WriteLog($"[Handshake] Неверная подпись от {handshake.InitiatorId}");
                     return;
                 }
-                
+
                 byte[] peerEncryptionKey = Convert.FromBase64String(initiatorContact.EncryptionKey);
                 byte[] rootKey = DecryptForRecipient(handshake.EncryptedRootKey, myEncryptionPrivateKey, peerEncryptionKey);
                 byte[] chatSalt = DecryptForRecipient(handshake.EncryptedChatSalt, myEncryptionPrivateKey, peerEncryptionKey);
@@ -193,20 +251,20 @@ namespace ForestMSG.Core.Services.Chatting
                     SelfId = myPublicId,
                     PeerId = handshake.InitiatorId,
                     PeerPublicKey = Convert.FromBase64String(initiatorContact.PublicKey),
-                    NextMessageId = 1                    
+                    NextMessageId = 1
                 };
 
                 bool accepted = false;
-                if(HandshakeRequested != null)
+                if (HandshakeRequested != null)
                 {
                     accepted = await HandshakeRequested.Invoke(handshake.InitiatorId, handshake.ChatId);
                 }
 
-                if(accepted)
+                if (accepted)
                 {
                     _sessions[handshake.ChatId] = session;
-                    await SendConfirmationAsync(handshake.ChatId, handshake.InitiatorId, myPrivateKey);
-                    
+                    await SendConfirmationAsync(handshake.ChatId, handshake.InitiatorId, myPrivateKey, initiatorContact);
+
                     Logger.WriteLog($"[Handshake] Чат {handshake.ChatId} принят");
                 }
                 else
@@ -220,19 +278,32 @@ namespace ForestMSG.Core.Services.Chatting
             }
         }
 
-        private async Task SendConfirmationAsync(string chatId, string initiatorId, byte[] myPrivateKey)
+        private async Task SendConfirmationAsync(
+            string chatId,
+            string initiatorId,
+            byte[] myPrivateKey,
+            Contact initiatorContact)
         {
             var confirmation = new HandshakeConfirmation
             {
                 ChatId = chatId,
                 RecipientId = initiatorId,
-                ConfirmedAt = DateTime.UtcNow                
+                ConfirmedAt = DateTime.UtcNow
             };
 
             byte[] data = JsonSerializer.SerializeToUtf8Bytes(confirmation);
             confirmation.Signature = CryptoKeysGenerator.SignData(data, myPrivateKey);
 
-            await _torrentService.PublishConfirmationAsync(confirmation);
+            string infoHash = await _torrentService.PublishConfirmationAsync(confirmation);
+
+            if (!string.IsNullOrEmpty(initiatorContact.I2PDestination))
+            {
+                await _i2pChannel.SendConfirmationInfoHashAsync(
+                    initiatorContact.I2PDestination,
+                    chatId,
+                    infoHash
+                );
+            }
         }
 
         private async Task ScheduleHandshakeRemovalAsync(string chatId)
@@ -244,16 +315,13 @@ namespace ForestMSG.Core.Services.Chatting
             {
                 await Task.Delay(TimeSpan.FromSeconds(30), cts.Token);
 
-                if(!_sessions.ContainsKey(chatId))
+                if (!_sessions.ContainsKey(chatId))
                 {
                     await _torrentService.RemoveHandshakeFromDHTAsync(chatId);
                     Logger.WriteLog($"[Handshake] Рукопожатие {chatId} удалено (таймаут)");
                 }
             }
-            catch(TaskCanceledException)
-            {
-                
-            }
+            catch (TaskCanceledException) { }
         }
 
         public ChatSession? GetSession(string chatId)
@@ -264,7 +332,7 @@ namespace ForestMSG.Core.Services.Chatting
 
         public List<ChatSession> GetAllSessions()
         {
-            return new (_sessions.Values);
+            return new List<ChatSession>(_sessions.Values);
         }
 
         public void RemoveSession(string chatId)
@@ -280,7 +348,6 @@ namespace ForestMSG.Core.Services.Chatting
         private byte[] DecryptForRecipient(byte[] encryptedData, byte[] myPrivateKey, byte[] peerPublicKey)
         {
             byte[] sharedSecret = CryptoKeysGenerator.ComputeSharedSecret(myPrivateKey, peerPublicKey);
-
             byte[] key = HKDF(sharedSecret, "FOREST_HANDSHAKE_KEY", 32);
 
             byte[] nonce = new byte[12];
@@ -301,7 +368,6 @@ namespace ForestMSG.Core.Services.Chatting
         private byte[] EncryptForRecipient(byte[] data, byte[] myPrivateKey, byte[] peerPublicKey)
         {
             byte[] sharedSecret = CryptoKeysGenerator.ComputeSharedSecret(myPrivateKey, peerPublicKey);
-
             byte[] key = HKDF(sharedSecret, "FOREST_HANDSHAKE_KEY", 32);
 
             byte[] nonce = new byte[12];

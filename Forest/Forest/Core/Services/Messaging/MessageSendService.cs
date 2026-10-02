@@ -1,9 +1,11 @@
+using System.Text.Json;
 using Forest.Models;
 using ForestMSG.Core.Enums;
 using ForestMSG.Core.Logging;
 using ForestMSG.Core.Services.Chatting;
 using ForestMSG.Core.Services.ContactManagement;
 using ForestMSG.Core.Services.FileSystem;
+using ForestMSG.Core.Services.Network;
 using ForestMSG.Core.Services.TorrentControl;
 using static ForestMSG.Core.Services.Encryption.EncryptionService;
 
@@ -16,6 +18,7 @@ namespace ForestMSG.Core.Services.Messaging
         private readonly TorrentService.MessageTorrentService _torrentService;
         private readonly HandshakeService _handshakeService;
         private readonly ContactService _contactService;
+        private readonly I2PMessageChannel _i2pChannel;
         private readonly string _chatsFolder;
 
         public MessageSendService(
@@ -23,13 +26,15 @@ namespace ForestMSG.Core.Services.Messaging
             ArchiveService archiveService,
             TorrentService.MessageTorrentService torrentService,
             HandshakeService handshakeService,
-            ContactService contactService)
+            ContactService contactService,
+            I2PMessageChannel i2pChannel)
         {
             _encoder = encoder;
             _archiveService = archiveService;
             _torrentService = torrentService;
             _handshakeService = handshakeService;
             _contactService = contactService;
+            _i2pChannel = i2pChannel;
 
             _chatsFolder = Path.Combine(DirectoryNames.MainFolder, DirectoryNames.Chats);
             Directory.CreateDirectory(_chatsFolder);
@@ -39,8 +44,7 @@ namespace ForestMSG.Core.Services.Messaging
             string chatId,
             string text,
             List<string> mediaPaths = null,
-            string password = null
-        )
+            string password = null)
         {
             try
             {
@@ -48,15 +52,15 @@ namespace ForestMSG.Core.Services.Messaging
 
                 var session = _handshakeService.GetSession(chatId);
                 if (session == null)
-                {
                     throw new InvalidOperationException($"Сессия для чата {chatId} не найдена. Сначала инициируйте чат.");
-                }
 
                 var keyPair = await _contactService.LoadKeysAsync(session.SelfId, password ?? "");
                 if (keyPair == null)
-                {
                     throw new InvalidOperationException($"Не удалось загрузить ключи для {session.SelfId}");
-                }
+
+                var peerContact = await _contactService.LoadContactAsync(session.PeerId);
+                if (peerContact == null)
+                    throw new InvalidOperationException($"Контакт {session.PeerId} не найден");
 
                 var message = new Message
                 {
@@ -74,9 +78,9 @@ namespace ForestMSG.Core.Services.Messaging
                 if (!string.IsNullOrEmpty(text))
                 {
                     string textFolder = Path.Combine(tempFolder, "Text");
-                    Directory.CreateDirectory(tempFolder);
-                    string TextFilePath = Path.Combine(textFolder, "content.txt");
-                    await File.WriteAllTextAsync(TextFilePath, text);
+                    Directory.CreateDirectory(textFolder);
+                    string textFilePath = Path.Combine(textFolder, "content.txt");
+                    await File.WriteAllTextAsync(textFilePath, text);
                 }
 
                 if (mediaPaths != null && mediaPaths.Count > 0)
@@ -96,16 +100,33 @@ namespace ForestMSG.Core.Services.Messaging
                 Directory.CreateDirectory(chatFolder);
                 string filePath = _encoder.SaveEncryptedMessageToFile(packet, chatFolder);
 
-                await _torrentService.PublishMessageAsync(filePath, chatId);
+                string infoHash = await _torrentService.PublishMessageAsync(filePath, chatId);
+
+                if (!string.IsNullOrEmpty(peerContact.I2PDestination))
+                {
+                    bool sent = await _i2pChannel.SendMessageInfoHashAsync(
+                        peerContact.I2PDestination,
+                        chatId,
+                        encryptedMessage.Id.ToString(),
+                        infoHash
+                    );
+
+                    if (!sent)
+                        Logger.WriteLog($"[MessageSendService] Не удалось отправить InfoHash для {chatId}");
+                }
+                else
+                {
+                    Logger.WriteLog($"[MessageSendService] У контакта {session.PeerId} нет I2P-адреса");
+                }
 
                 await SaveMessageToHistoryAsync(chatId, encryptedMessage);
 
-                Logger.WriteLog($"[MessageSendService] Сообщение {encryptedMessage} отправлено в чат {chatId}");
+                Logger.WriteLog($"[MessageSendService] Сообщение {encryptedMessage.Id} отправлено в чат {chatId}");
                 return encryptedMessage;
             }
             catch (Exception ex)
             {
-                Logger.WriteLog($"[MessageSendService] Ошибка отправки {ex.Message}");
+                Logger.WriteLog($"[MessageSendService] Ошибка отправки: {ex.Message}");
                 throw;
             }
         }
@@ -147,6 +168,7 @@ namespace ForestMSG.Core.Services.Messaging
 
             return MessageType.Text;
         }
+
 
         private async Task SaveMediaFilesAsync(string tempFolder, List<string> mediaPaths, Message message)
         {
@@ -217,6 +239,8 @@ namespace ForestMSG.Core.Services.Messaging
                         break;
                 }
             }
+
+            await Task.CompletedTask;
         }
 
         public async Task<Message> SendTextMessageAsync(string chatId, string text, string password = null)
@@ -251,8 +275,8 @@ namespace ForestMSG.Core.Services.Messaging
                 Directory.CreateDirectory(historyFolder);
 
                 string filePath = Path.Combine(historyFolder, $"{message.Id}_{DateTime.UtcNow.Ticks}.json");
-                var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
-                string json = System.Text.Json.JsonSerializer.Serialize(message, options);
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                string json = JsonSerializer.Serialize(message, options);
                 await File.WriteAllTextAsync(filePath, json);
             }
             catch (Exception ex)

@@ -21,36 +21,25 @@ namespace ForestMSG.Core.Services.TorrentControl
                     AllowLocalPeerDiscovery = true,
                 }.ToSettings();
 
-                var engine = new ClientEngine(settings);
+                var localEngine = new ClientEngine(settings);
 
                 var contactTorrent = await Task.Run(() =>
                     Torrent.Load(Path.Combine(contactFolderPath, contactFileName)));
 
-                var manager = await engine.AddAsync(contactTorrent, contactFolderPath);
-
+                var manager = await localEngine.AddAsync(contactTorrent, contactFolderPath);
                 await manager.StartAsync();
 
                 string magnetLink = manager.MagnetLink?.ToV1String() ?? "N/A";
 
-                var logMessage = $"Torrent: {contactTorrent.Name}\n"
-                + $"State: {manager.State}\n"
-                + $"CanUseDht: {manager.CanUseDht}\n"
-                + $"Complete: {manager.Complete}\n"
-                + $"Peers Available: {manager.Peers.Available}\n"
-                + $"Magnet: {magnetLink}";
-                Logger.WriteLog(logMessage);
-
-                manager.TorrentStateChanged += (s, e) =>
-                    Logger.WriteLog($"State changed to: {manager.State}");
-                manager.PeerConnected += (s, e) =>
-                    Logger.WriteLog($"Peer connected: {e.Peer.Uri}");
+                Logger.WriteLog($"[TorrentService] Torrent: {contactTorrent.Name}");
+                Logger.WriteLog($"  State: {manager.State}");
+                Logger.WriteLog($"  Magnet: {magnetLink}");
             }
+
             public async Task CreateContactTorrentAsync(string contactJsonPath, string contactId, bool isPrivate = false)
             {
                 if (!File.Exists(contactJsonPath))
-                {
                     throw new FileNotFoundException($"Файл контакта не найден: {contactJsonPath}");
-                }
 
                 string contactTorrentFolder = Path.Combine(_contactsTorrentFolder, contactId);
                 Directory.CreateDirectory(contactTorrentFolder);
@@ -61,16 +50,16 @@ namespace ForestMSG.Core.Services.TorrentControl
                 {
                     Comment = $"Forest Contact: {contactId}",
                     CreatedBy = "Forest Messenger v1.0",
-                    Name = $"forest_contact_{contactId}"
+                    Name = $"forest_contact_{contactId}",
+                    Private = isPrivate
                 };
 
                 if (!isPrivate)
-                {
-                    creator.Announces.Add(PublicTrackers);
-                }
+                    creator.Announces.AddRange(PublicTrackers);
 
                 await Task.Run(() => creator.Create(new TorrentFileSource(contactJsonPath), torrentPath));
             }
+
             public async Task<Contact> FindContactInDHTAsync(string publicId)
             {
                 string contactFolder = Path.Combine(_contactsFolder, publicId);
@@ -78,8 +67,8 @@ namespace ForestMSG.Core.Services.TorrentControl
 
                 if (File.Exists(jsonPath))
                 {
-                    string json = await File.ReadAllTextAsync(jsonPath);
-                    return JsonSerializer.Deserialize<Contact>(json);
+                    string cachedJson = await File.ReadAllTextAsync(jsonPath);
+                    return JsonSerializer.Deserialize<Contact>(cachedJson);
                 }
 
                 try
@@ -92,33 +81,41 @@ namespace ForestMSG.Core.Services.TorrentControl
                     var manager = await engine.AddAsync(magnetLink, _torrentsFolder);
                     await manager.StartAsync();
 
+                    int waitTime = 0;
+                    while (manager.Torrent == null && waitTime < 30000)
+                    {
+                        await Task.Delay(500);
+                        waitTime += 500;
+                    }
+
                     if (manager.Torrent == null)
                     {
-                        Logger.WriteLog($"[TorrentService] Торрент не содержит метаданных для {publicId}");
+                        Logger.WriteLog($"[TorrentService] Таймаут метаданных для {publicId}");
+                        await engine.RemoveAsync(manager);
+                        return null;
+                    }
+
+                    var jsonFile = manager.Torrent.Files.FirstOrDefault(f =>
+                        f.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
+
+                    if (jsonFile == null)
+                    {
+                        Logger.WriteLog($"[TorrentService] JSON не найден в торренте {publicId}");
+                        await engine.RemoveAsync(manager);
                         return null;
                     }
 
                     string downloadPath = Path.Combine(_torrentsFolder, "Downloads");
                     Directory.CreateDirectory(downloadPath);
 
-                    var jsonFile = manager.Torrent.Files.FirstOrDefault(f =>
-                f.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
-
-                    if (jsonFile == null)
-                    {
-                        Logger.WriteLog($"[TorrentService] JSON файл не найден в торренте {publicId}");
-                        return null;
-                    }
-
                     while (manager.Bitfield.PercentComplete < 100 && manager.State != TorrentState.Seeding)
-                    {
                         await Task.Delay(1000);
-                    }
 
                     string downloadedFilePath = Path.Combine(downloadPath, publicId, jsonFile.Path);
                     if (!File.Exists(downloadedFilePath))
                     {
                         Logger.WriteLog($"[TorrentService] Файл не скачан: {downloadedFilePath}");
+                        await engine.RemoveAsync(manager);
                         return null;
                     }
 
@@ -126,25 +123,25 @@ namespace ForestMSG.Core.Services.TorrentControl
                     var contact = JsonSerializer.Deserialize<Contact>(json);
 
                     await manager.StopAsync();
+                    await engine.RemoveAsync(manager);
 
                     if (contact != null && contact.PublicId == publicId)
                     {
                         Directory.CreateDirectory(contactFolder);
                         await File.WriteAllTextAsync(jsonPath, json);
-
-                        Logger.WriteLog($"[TorrentService] Контакт {publicId} найден и сохранён локально");
+                        Logger.WriteLog($"[TorrentService] Контакт {publicId} найден");
                         return contact;
                     }
 
                     return null;
-
                 }
                 catch (Exception e)
                 {
-                    Logger.WriteLog($"[TorrentService] {e}");
+                    Logger.WriteLog($"[TorrentService] Ошибка поиска контакта: {e.Message}");
                     return null;
                 }
             }
+
             public async Task PublishContactAsync(Contact contact)
             {
                 if (contact == null)
@@ -168,24 +165,19 @@ namespace ForestMSG.Core.Services.TorrentControl
 
                 Logger.WriteLog($"[TorrentService] Контакт {contact.PublicId} опубликован");
                 Logger.WriteLog($"  State: {manager.State}");
-                Logger.WriteLog($"  Magnet: {manager.MagnetLink?.ToV1String() ?? "N/A"}");
-
-                manager.TorrentStateChanged += (s, e) =>
-                    Logger.WriteLog($"State changed to: {manager.State}");
-                manager.PeerConnected += (s, e) =>
-                    Logger.WriteLog($"Peer connected: {e.Peer.Uri}");
             }
+
             private string GenerateInfoHashFromPublicId(string publicId)
             {
-                using var sha1 = System.Security.Cryptography.SHA1.Create();
+                using var sha1 = SHA1.Create();
                 byte[] hash = sha1.ComputeHash(Encoding.UTF8.GetBytes(publicId));
                 return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
             }
 
-            public async Task PublishHandshakeAsync(HandshakePacket handshake)
+            public async Task<string> PublishHandshakeAsync(HandshakePacket handshake)
             {
                 if (handshake == null)
-                { throw new ArgumentNullException(nameof(handshake)); }
+                    throw new ArgumentNullException(nameof(handshake));
 
                 string handshakeFolder = Path.Combine(_torrentsFolder, "Handshakes");
                 Directory.CreateDirectory(handshakeFolder);
@@ -195,8 +187,7 @@ namespace ForestMSG.Core.Services.TorrentControl
                 string json = JsonSerializer.Serialize(handshake, options);
                 await File.WriteAllTextAsync(jsonPath, json);
 
-                string torrentName = $"{handshake.ChatId}_handshake.torrent";
-                string torrentPath = Path.Combine(handshakeFolder, torrentName);
+                string torrentPath = Path.Combine(handshakeFolder, $"{handshake.ChatId}_handshake.torrent");
 
                 var creator = new TorrentCreator
                 {
@@ -206,7 +197,7 @@ namespace ForestMSG.Core.Services.TorrentControl
                     Private = true
                 };
 
-                creator.Announces.Add(PublicTrackers);
+                creator.Announces.AddRange(PublicTrackers);
 
                 await Task.Run(() => creator.Create(new TorrentFileSource(jsonPath), torrentPath));
 
@@ -214,24 +205,18 @@ namespace ForestMSG.Core.Services.TorrentControl
                 var manager = await engine.AddAsync(torrent, handshakeFolder);
                 await manager.StartAsync();
 
-                Logger.WriteLog($"[TorrentService] Рукопожатие {handshake.ChatId} опубликовано");
-                Logger.WriteLog($"State: {manager.State}");
-                Logger.WriteLog($"Magnet: {manager.MagnetLink?.ToV1String() ?? "N/A"}");
-
-                manager.TorrentStateChanged += (s, e) =>
-                    Logger.WriteLog($"Handshake state changed to: {manager.State}");
-                manager.PeerConnected += (s, e) =>
-                    Logger.WriteLog($"Handshake peer connected: {e.Peer.Uri}");
-
                 string infoHashHex = torrent.InfoHashes.V1OrV2.ToHex();
-                string dhtKey = ComputeDhtKey($"handshake_{handshake.RecipientId}");
 
-                await WriteToDhtAsync(dhtKey, infoHashHex);
+                Logger.WriteLog($"[TorrentService] Рукопожатие {handshake.ChatId} опубликовано");
+                Logger.WriteLog($"  InfoHash: {infoHashHex}");
+
+                return infoHashHex;
             }
-            public async Task PublishConfirmationAsync(HandshakeConfirmation confirmation)
+
+            public async Task<string> PublishConfirmationAsync(HandshakeConfirmation confirmation)
             {
                 if (confirmation == null)
-                { throw new ArgumentException(nameof(confirmation)); }
+                    throw new ArgumentNullException(nameof(confirmation));
 
                 string handshakeFolder = Path.Combine(_torrentsFolder, "Handshakes");
                 Directory.CreateDirectory(handshakeFolder);
@@ -241,8 +226,7 @@ namespace ForestMSG.Core.Services.TorrentControl
                 string json = JsonSerializer.Serialize(confirmation, options);
                 await File.WriteAllTextAsync(jsonPath, json);
 
-                string torrentName = $"{confirmation.ChatId}_confirmation.torrent";
-                string torrentPath = Path.Combine(handshakeFolder, torrentName);
+                string torrentPath = Path.Combine(handshakeFolder, $"{confirmation.ChatId}_confirmation.torrent");
 
                 var creator = new TorrentCreator
                 {
@@ -252,7 +236,7 @@ namespace ForestMSG.Core.Services.TorrentControl
                     Private = false
                 };
 
-                creator.Announces.Add(PublicTrackers);
+                creator.Announces.AddRange(PublicTrackers);
 
                 await Task.Run(() => creator.Create(new TorrentFileSource(jsonPath), torrentPath));
 
@@ -260,68 +244,51 @@ namespace ForestMSG.Core.Services.TorrentControl
                 var manager = await engine.AddAsync(torrent, handshakeFolder);
                 await manager.StartAsync();
 
-                Logger.WriteLog($"[TorrentService] Квитанция для {confirmation.ChatId} опубликовано");
-                Logger.WriteLog($"State: {manager.State}");
+                string infoHashHex = torrent.InfoHashes.V1OrV2.ToHex();
+
+                Logger.WriteLog($"[TorrentService] Квитанция {confirmation.ChatId} опубликована");
+                Logger.WriteLog($"  InfoHash: {infoHashHex}");
+
+                return infoHashHex;
             }
 
-            public async Task<int> DownloadHandshakesFromDhtAsync(string myPublicId)
+            public async Task DownloadHandshakeByInfoHashAsync(string infoHash, string chatId)
             {
-                int downloaded = 0;
                 string handshakeFolder = Path.Combine(_torrentsFolder, "Handshakes");
                 Directory.CreateDirectory(handshakeFolder);
 
                 try
                 {
-                    string dhtKey = ComputeDhtKey($"handshake_{myPublicId}");
-                    var infoHashes = await ReadFromDhtAsync(dhtKey);
+                    var magnet = new MagnetLink(InfoHash.FromHex(infoHash));
+                    var manager = await engine.AddAsync(magnet, handshakeFolder);
+                    await manager.StartAsync();
 
-                    if (infoHashes == null || infoHashes.Count == 0)
-                        return 0;
-
-                    foreach (var infoHash in infoHashes)
+                    int waitTime = 0;
+                    while (manager.Torrent == null && waitTime < 30000)
                     {
-                        try
-                        {
-                            var magnet = new MagnetLink(InfoHash.FromHex(infoHash));
-                            var manager = await engine.AddAsync(magnet, handshakeFolder);
-                            await manager.StartAsync();
-
-                            int waitTime = 0;
-                            while (manager.Torrent == null && waitTime < 30000)
-                            {
-                                await Task.Delay(500);
-                                waitTime += 500;
-                            }
-
-                            if (manager.Torrent == null)
-                            {
-                                await engine.RemoveAsync(manager);
-                                continue;
-                            }
-
-                            while (manager.Bitfield.PercentComplete < 100 && manager.State != TorrentState.Seeding)
-                            {
-                                await Task.Delay(1000);
-                            }
-
-                            await manager.StopAsync();
-                            await engine.RemoveAsync(manager);
-
-                            downloaded++;
-                            Logger.WriteLog($"[TorrentService] Скачано рукопожатие {infoHash}");
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.WriteLog($"[TorrentService] Ошибка скачивания {infoHash}: {ex.Message}");
-                        }
+                        await Task.Delay(500);
+                        waitTime += 500;
                     }
+
+                    if (manager.Torrent == null)
+                    {
+                        Logger.WriteLog($"[TorrentService] Таймаут метаданных для {infoHash}");
+                        await engine.RemoveAsync(manager);
+                        return;
+                    }
+
+                    while (manager.Bitfield.PercentComplete < 100 && manager.State != TorrentState.Seeding)
+                        await Task.Delay(1000);
+
+                    await manager.StopAsync();
+                    await engine.RemoveAsync(manager);
+
+                    Logger.WriteLog($"[TorrentService] Рукопожатие {chatId} скачано");
                 }
                 catch (Exception ex)
                 {
-                    Logger.WriteLog($"[TorrentService] Ошибка DHT-поиска: {ex.Message}");
+                    Logger.WriteLog($"[TorrentService] Ошибка скачивания рукопожатия {chatId}: {ex.Message}");
                 }
-
-                return downloaded;
             }
 
             public async Task<List<HandshakePacket>> FindHandshakesForMeAsync(string myPublicId)
@@ -330,7 +297,7 @@ namespace ForestMSG.Core.Services.TorrentControl
                 string handshakeFolder = Path.Combine(_torrentsFolder, "Handshakes");
 
                 if (!Directory.Exists(handshakeFolder))
-                { return result; }
+                    return result;
 
                 try
                 {
@@ -343,21 +310,20 @@ namespace ForestMSG.Core.Services.TorrentControl
                             var torrent = await Task.Run(() => Torrent.Load(torrentPath));
 
                             var jsonFile = torrent.Files.FirstOrDefault(
-                                f => f.Path.EndsWith("_handshake.json", StringComparison.OrdinalIgnoreCase)
-                            );
+                                f => f.Path.EndsWith("_handshake.json", StringComparison.OrdinalIgnoreCase));
 
                             if (jsonFile == null)
-                            { continue; }
+                                continue;
 
                             string jsonPath = Path.Combine(handshakeFolder, jsonFile.Path);
                             if (!File.Exists(jsonPath))
-                            { continue; }
+                                continue;
 
                             string json = await File.ReadAllTextAsync(jsonPath);
                             var handshake = JsonSerializer.Deserialize<HandshakePacket>(json);
 
                             if (handshake == null)
-                            { continue; }
+                                continue;
 
                             if (handshake.RecipientId == myPublicId)
                             {
@@ -375,7 +341,7 @@ namespace ForestMSG.Core.Services.TorrentControl
                         }
                         catch (Exception ex)
                         {
-                            Logger.WriteLog($"[TorrentService] Ошибка обработки {torrentPath}");
+                            Logger.WriteLog($"[TorrentService] Ошибка обработки {torrentPath}: {ex.Message}");
                         }
                     }
                 }
@@ -386,6 +352,7 @@ namespace ForestMSG.Core.Services.TorrentControl
 
                 return result;
             }
+
             public async Task RemoveHandshakeFromDHTAsync(string chatId)
             {
                 string handshakeFolder = Path.Combine(_torrentsFolder, "Handshakes");
@@ -400,25 +367,19 @@ namespace ForestMSG.Core.Services.TorrentControl
                         {
                             await manager.StopAsync();
                             await engine.RemoveAsync(manager);
-                            Logger.WriteLog($"[TorrentService] раздача рукопожатия {chatId} остановлена");
+                            Logger.WriteLog($"[TorrentService] Раздача рукопожатия {chatId} остановлена");
                             break;
                         }
                     }
 
                     if (File.Exists(torrentPath))
-                    {
                         File.Delete(torrentPath);
-                        Logger.WriteLog($"[TorrentService] Удален .torrent: {torrentPath}");
-                    }
 
                     if (File.Exists(jsonPath))
-                    {
                         File.Delete(jsonPath);
-                        Logger.WriteLog($"[TorrentService] Удален JSON: {jsonPath}");
-                    }
 
                     string confTorrentPath = Path.Combine(handshakeFolder, $"{chatId}_confirmation.torrent");
-                    string confJsonPath = Path.Combine(handshakeFolder, $"{chatId}_confirmation");
+                    string confJsonPath = Path.Combine(handshakeFolder, $"{chatId}_confirmation.json");
 
                     if (File.Exists(confTorrentPath))
                     {
@@ -432,7 +393,10 @@ namespace ForestMSG.Core.Services.TorrentControl
                             }
                         }
                         File.Delete(confTorrentPath);
-                        File.Delete(confJsonPath);
+
+                        if (File.Exists(confJsonPath))
+                            File.Delete(confJsonPath);
+
                         Logger.WriteLog($"[TorrentService] Удалена квитанция для {chatId}");
                     }
                 }
@@ -440,11 +404,12 @@ namespace ForestMSG.Core.Services.TorrentControl
                 {
                     Logger.WriteLog($"[TorrentService] Ошибка удаления рукопожатия {chatId}: {ex.Message}");
                 }
-            }            
+            }
         }
+
         public class MessageTorrentService : TorrentService
         {
-            public async Task PublishMessageAsync(string encryptedFilePath, string chatId)
+            public async Task<string> PublishMessageAsync(string encryptedFilePath, string chatId)
             {
                 if (!File.Exists(encryptedFilePath))
                     throw new FileNotFoundException($"Файл сообщения не найден: {encryptedFilePath}");
@@ -456,11 +421,50 @@ namespace ForestMSG.Core.Services.TorrentControl
                 await manager.StartAsync();
 
                 string infoHashHex = torrent.InfoHashes.V1OrV2.ToHex();
-                string dhtKey = ComputeDhtKey($"message_{chatId}");
-                await WriteToDhtAsync(dhtKey, infoHashHex);
 
                 Logger.WriteLog($"[TorrentService] Сообщение для чата {chatId} опубликовано");
                 Logger.WriteLog($"  InfoHash: {infoHashHex}");
+
+                return infoHashHex;
+            }
+
+            public async Task DownloadMessageByInfoHashAsync(string infoHash, string chatId)
+            {
+                string downloadPath = Path.Combine(_torrentsFolder, "Messages", chatId);
+                Directory.CreateDirectory(downloadPath);
+
+                try
+                {
+                    var magnet = new MagnetLink(InfoHash.FromHex(infoHash));
+                    var manager = await engine.AddAsync(magnet, downloadPath);
+                    await manager.StartAsync();
+
+                    int waitTime = 0;
+                    while (manager.Torrent == null && waitTime < 30000)
+                    {
+                        await Task.Delay(500);
+                        waitTime += 500;
+                    }
+
+                    if (manager.Torrent == null)
+                    {
+                        Logger.WriteLog($"[TorrentService] Таймаут метаданных для сообщения {infoHash}");
+                        await engine.RemoveAsync(manager);
+                        return;
+                    }
+
+                    while (manager.Bitfield.PercentComplete < 100 && manager.State != TorrentState.Seeding)
+                        await Task.Delay(1000);
+
+                    await manager.StopAsync();
+                    await engine.RemoveAsync(manager);
+
+                    Logger.WriteLog($"[TorrentService] Сообщение для чата {chatId} скачано");
+                }
+                catch (Exception ex)
+                {
+                    Logger.WriteLog($"[TorrentService] Ошибка скачивания сообщения: {ex.Message}");
+                }
             }
 
             private async Task<string> CreateTorrentFromFileAsync(string filePath, string id, string type = "file")
@@ -481,7 +485,7 @@ namespace ForestMSG.Core.Services.TorrentControl
                     Private = false
                 };
 
-                creator.Announces.Add(PublicTrackers);
+                creator.Announces.AddRange(PublicTrackers);
 
                 await Task.Run(() => creator.Create(new TorrentFileSource(filePath), torrentPath));
 
@@ -495,11 +499,12 @@ namespace ForestMSG.Core.Services.TorrentControl
                 return await engine.AddAsync(magnet, downloadPath);
             }
         }
+
         private readonly ClientEngine engine;
         private readonly string _torrentsFolder;
-
         private readonly string _contactsTorrentFolder;
         private readonly string _contactsFolder;
+
         private readonly List<string> PublicTrackers = new List<string>()
         {
             "udp://tracker.opentrackr.org:1337/announce",
@@ -528,26 +533,7 @@ namespace ForestMSG.Core.Services.TorrentControl
             }.ToSettings();
 
             engine = new ClientEngine(engineSettings);
-
             engine.StartAllAsync();
-        }
-
-        public string ComputeDhtKey(string input)
-        {
-            using var sha = SHA256.Create();
-            byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(input));
-            return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-        }
-
-        public async Task WriteToDhtAsync(string key, string value)
-        {
-           
-        }
-
-        public async Task<List<string>> ReadFromDhtAsync(string key)
-        {
-            Logger.WriteLog($"[TorrentService] DHT Get: {key}");
-            return new List<string>();
         }
     }
 }
