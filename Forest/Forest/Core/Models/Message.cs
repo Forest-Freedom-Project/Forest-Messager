@@ -15,7 +15,6 @@ namespace Forest.Models
         public List<string>? AudioFiles { get; set; }     
         public List<string>? VoicesFiles { get; set; }
         public List<string>? VideoFiles { get; set; }
-        public List<string>? PictureFiles { get; set; }
-        public MessageType MessageType { get; internal set; }
+        public List<string>? PictureFiles { get; set; }        
     }
 }

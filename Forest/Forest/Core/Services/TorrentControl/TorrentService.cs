@@ -11,6 +11,44 @@ namespace ForestMSG.Core.Services.TorrentControl
 {
     public class TorrentService
     {
+        private readonly ClientEngine engine;
+        private readonly string _torrentsFolder;
+        private readonly string _contactsTorrentFolder;
+        private readonly string _contactsFolder;
+
+        private readonly List<string> PublicTrackers = new List<string>()
+        {
+            
+        };
+
+        public ContactTorrentService Contacts { get; }
+        public MessageTorrentService Messages { get; }
+
+        public TorrentService(string baseFolder = null)
+        {
+            string mainFolder = baseFolder ?? DirectoryNames.MainFolder;
+
+            _contactsFolder = Path.Combine(mainFolder, DirectoryNames.Contacts);
+            _torrentsFolder = Path.Combine(mainFolder, DirectoryNames.Torrents);
+            _contactsTorrentFolder = Path.Combine(_torrentsFolder, DirectoryNames.TorrentContacts);
+
+            Directory.CreateDirectory(_contactsFolder);
+            Directory.CreateDirectory(_torrentsFolder);
+            Directory.CreateDirectory(_contactsTorrentFolder);
+
+            var engineSettings = new EngineSettingsBuilder()
+            {
+                AllowPortForwarding = true,
+                AutoSaveLoadDhtCache = true,
+                AllowLocalPeerDiscovery = true
+            }.ToSettings();
+
+            engine = new ClientEngine(engineSettings);
+            engine.StartAllAsync();
+        }
+
+
+
         public class ContactTorrentService : TorrentService
         {
             public async Task StartContactTorrentAsync(string contactFolderPath, string contactFileName)
@@ -498,42 +536,6 @@ namespace ForestMSG.Core.Services.TorrentControl
                 Directory.CreateDirectory(downloadPath);
                 return await engine.AddAsync(magnet, downloadPath);
             }
-        }
-
-        private readonly ClientEngine engine;
-        private readonly string _torrentsFolder;
-        private readonly string _contactsTorrentFolder;
-        private readonly string _contactsFolder;
-
-        private readonly List<string> PublicTrackers = new List<string>()
-        {
-            "udp://tracker.opentrackr.org:1337/announce",
-            "udp://tracker.coppersurfer.tk:6969/announce",
-            "udp://tracker.leechers-paradise.org:6969/announce",
-            "udp://tracker.cyberia.is:6969/announce"
-        };
-
-        public TorrentService(string baseFolder = null)
-        {
-            string mainFolder = baseFolder ?? DirectoryNames.MainFolder;
-
-            _contactsFolder = Path.Combine(mainFolder, DirectoryNames.Contacts);
-            _torrentsFolder = Path.Combine(mainFolder, DirectoryNames.Torrents);
-            _contactsTorrentFolder = Path.Combine(_torrentsFolder, DirectoryNames.TorrentContacts);
-
-            Directory.CreateDirectory(_contactsFolder);
-            Directory.CreateDirectory(_torrentsFolder);
-            Directory.CreateDirectory(_contactsTorrentFolder);
-
-            var engineSettings = new EngineSettingsBuilder()
-            {
-                AllowPortForwarding = true,
-                AutoSaveLoadDhtCache = true,
-                AllowLocalPeerDiscovery = true
-            }.ToSettings();
-
-            engine = new ClientEngine(engineSettings);
-            engine.StartAllAsync();
-        }
+        }        
     }
 }
