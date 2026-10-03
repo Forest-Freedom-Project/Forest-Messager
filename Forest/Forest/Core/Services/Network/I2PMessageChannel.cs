@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
-using System.Net.Sockets;
 using System.Text;
+using DotI2p;
 using ForestMSG.Core.Logging;
 
 namespace ForestMSG.Core.Services.Network
@@ -59,35 +59,52 @@ namespace ForestMSG.Core.Services.Network
             {
                 try
                 {
-                    var virtualStream = await _i2pService.CreateListeningStreamAsync();
-
-                    if (virtualStream == null)
+                    if (!_i2pService.IsConnected)
                     {
-                        await Task.Delay(1000, ct);
-                        continue;
-                    }
-                    
-                    var acceptTask = virtualStream.AcceptAsync();
-                    var timeoutTask = Task.Delay(5000, ct);
-
-                    var completedTask = await Task.WhenAny(acceptTask, timeoutTask);
-
-                    if (completedTask == timeoutTask)
-                    {
-                        continue;
+                        Logger.WriteLog("[I2PMessageChannel] I2P отключён, переподключение...");
+                        await _i2pService.ReconnectAsync();
                     }
 
-                    var connection = await acceptTask;
-                    _ = Task.Run(() => HandleIncomingStream(connection), ct);
+                    var streamSubSession = await _i2pService.CreateStreamSubSessionAsync();
+                    var virtualStream = streamSubSession.CreateVirtualStream();
+
+                    try
+                    {
+                        var acceptTask = virtualStream.AcceptAsync();
+                        var timeoutTask = Task.Delay(10000, ct);
+                        var completedTask = await Task.WhenAny(acceptTask, timeoutTask);
+
+                        if (completedTask == timeoutTask)
+                            continue;
+
+                        var connection = await acceptTask;
+                        _ = Task.Run(() => HandleIncomingStream(connection), ct);
+                    }
+                    finally
+                    {
+                        try { virtualStream.Dispose(); } catch { }
+                    }
                 }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
+                catch (OperationCanceledException) { break; }
                 catch (Exception ex)
                 {
-                    Logger.WriteLog($"[I2PMessageChannel] Ошибка в цикле: {ex.Message}");
-                    await Task.Delay(2000, ct);
+                    Logger.WriteLog($"[I2PMessageChannel] Ошибка приёма: {ex.Message}");
+
+                    if (ex.Message.Contains("Connection is not established") ||
+                        ex.Message.Contains("Connection closed"))
+                    {
+                        try
+                        {
+                            await _i2pService.DisconnectAsync();
+                            await _i2pService.ConnectAsync();
+                        }
+                        catch (Exception reconnectEx)
+                        {
+                            Logger.WriteLog($"[I2PMessageChannel] Ошибка переподключения: {reconnectEx.Message}");
+                        }
+                    }
+
+                    await Task.Delay(5000, ct);
                 }
             }
         }

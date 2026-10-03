@@ -18,6 +18,7 @@ namespace ForestMSG.Core.Logging
                 this.LogDateTime = LogDateTime;
             }
         }
+       
         public static void WriteLog(string LogText)
         {     
             var folderPath = Path.Combine(DirectoryNames.MainFolder, "logs", $"{DateTime.Now:dd:MM:yyyy}");

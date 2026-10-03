@@ -13,14 +13,14 @@ namespace Forest
 		{
 			_mainWindow = new IntefaceService.WindowInterfaceService.MainWindow();		
 
-            Content = _mainWindow;
+            //Content = _mainWindow;
             
             Title = "Forest Messenger";
             MinimumSize = new Eto.Drawing.Size(800, 600);
             Width = 1000;
             Height = 700;	
 
-            SubscribeToUIEvents();
+            //SubscribeToUIEvents();
 
 		    Load += MainForm_Load;		
 		}
