@@ -1,6 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using ForestMSG.Core.Logging;
 using ForestMSG.Core.Models;
 using ForestMSG.Core.Services.FileSystem;
@@ -45,33 +50,40 @@ namespace ForestMSG.Core.Services.TorrentControl
 
             engine = new ClientEngine(engineSettings);
             engine.StartAllAsync();
+
+            Contacts = new ContactTorrentService(
+                engine,
+                _torrentsFolder,
+                _contactsTorrentFolder,
+                _contactsFolder,
+                PublicTrackers);
+
+            Messages = new MessageTorrentService(
+                engine,
+                _torrentsFolder,
+                PublicTrackers);
         }
 
-
-
-        public class ContactTorrentService : TorrentService
+        public class ContactTorrentService
         {
-            public async Task StartContactTorrentAsync(string contactFolderPath, string contactFileName)
+            private readonly ClientEngine engine;
+            private readonly string _torrentsFolder;
+            private readonly string _contactsTorrentFolder;
+            private readonly string _contactsFolder;
+            private readonly List<string> PublicTrackers;
+
+            public ContactTorrentService(
+                ClientEngine engine,
+                string torrentsFolder,
+                string contactsTorrentFolder,
+                string contactsFolder,
+                List<string> publicTrackers)
             {
-                var settings = new EngineSettingsBuilder
-                {
-                    AutoSaveLoadDhtCache = true,
-                    AllowLocalPeerDiscovery = true,
-                }.ToSettings();
-
-                var localEngine = new ClientEngine(settings);
-
-                var contactTorrent = await Task.Run(() =>
-                    Torrent.Load(Path.Combine(contactFolderPath, contactFileName)));
-
-                var manager = await localEngine.AddAsync(contactTorrent, contactFolderPath);
-                await manager.StartAsync();
-
-                string magnetLink = manager.MagnetLink?.ToV1String() ?? "N/A";
-
-                Logger.WriteLog($"[TorrentService] Torrent: {contactTorrent.Name}");
-                Logger.WriteLog($"  State: {manager.State}");
-                Logger.WriteLog($"  Magnet: {magnetLink}");
+                this.engine = engine;
+                this._torrentsFolder = torrentsFolder;
+                this._contactsTorrentFolder = contactsTorrentFolder;
+                this._contactsFolder = contactsFolder;
+                this.PublicTrackers = publicTrackers;
             }
 
             public async Task CreateContactTorrentAsync(string contactJsonPath, string contactId, bool isPrivate = false)
@@ -445,8 +457,22 @@ namespace ForestMSG.Core.Services.TorrentControl
             }
         }
 
-        public class MessageTorrentService : TorrentService
+        public class MessageTorrentService
         {
+            private readonly ClientEngine engine;
+            private readonly string _torrentsFolder;
+            private readonly List<string> PublicTrackers;
+
+            public MessageTorrentService(
+                ClientEngine engine,
+                string torrentsFolder,
+                List<string> publicTrackers)
+            {
+                this.engine = engine;
+                this._torrentsFolder = torrentsFolder;
+                this.PublicTrackers = publicTrackers;
+            }
+
             public async Task<string> PublishMessageAsync(string encryptedFilePath, string chatId)
             {
                 if (!File.Exists(encryptedFilePath))
@@ -536,6 +562,6 @@ namespace ForestMSG.Core.Services.TorrentControl
                 Directory.CreateDirectory(downloadPath);
                 return await engine.AddAsync(magnet, downloadPath);
             }
-        }        
+        }
     }
 }
